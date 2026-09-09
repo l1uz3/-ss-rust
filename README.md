@@ -7,7 +7,7 @@
 ### 海外机器安装 / 管理
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/l1uz3/-ss-rust/main/install.s)
+bash <(curl -fsSL https://raw.githubusercontent.com/l1uz3/-ss-rust/main/install.sh)
 ```
 
 ### 国内机器加速安装 / 管理
