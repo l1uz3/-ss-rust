@@ -48,7 +48,7 @@ install_dependencies() {
     if [ "$INIT_SYSTEM" = "systemd" ]; then
         apt-get update -y && apt-get install -y curl tar jq openssl
     else
-        apk update && apk add curl tar jq openssl libgcc
+        apk update && apk add curl tar xz jq openssl libgcc
     fi
 }
 
