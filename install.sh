@@ -46,7 +46,7 @@ check_sys() {
 install_dependencies() {
     echo "正在安装基础依赖..."
     if [ "$INIT_SYSTEM" = "systemd" ]; then
-        apt-get update -y && apt-get install -y curl tar jq openssl
+        apt-get update -y && apt-get install -y curl tar xz-utils jq openssl
     else
         apk update && apk add curl tar xz jq openssl libgcc
     fi
@@ -107,7 +107,7 @@ install_ss() {
     echo "正在查询 shadowsocks-rust 最新版本..."
     LATEST_TAG=$(curl -s https://api.github.com/repos/shadowsocks/shadowsocks-rust/releases/latest | jq -r '.tag_name')
     if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
-        LATEST_TAG="v1.21.2"
+        LATEST_TAG="v1.25.0"
     fi
 
     DOWNLOAD_URL="https://github.com/shadowsocks/shadowsocks-rust/releases/download/${LATEST_TAG}/shadowsocks-${LATEST_TAG}.${TARGET_ARCH}.tar.xz"
@@ -117,7 +117,8 @@ install_ss() {
     killall -9 ssserver 2>/dev/null || pkill -9 -f ssserver 2>/dev/null || true
 
     TMP_DIR=$(mktemp -d)
-    curl -sL "$DOWNLOAD_URL" | tar -xJ -C "$TMP_DIR"
+    # 使用 xz -dc 解压流，彻底规避 Busybox tar 不支持 -J 或找不到 xz 的问题
+    curl -sL "$DOWNLOAD_URL" | xz -dc | tar -xf - -C "$TMP_DIR"
     install -m 755 "$TMP_DIR/ssserver" "$BIN_FILE"
     rm -rf "$TMP_DIR"
 
@@ -287,7 +288,7 @@ uninstall_ss() {
     esac
 }
 
-# 交互主菜单（循环停留，操作完按回车返回，按 0 退出）
+# 交互主菜单
 menu() {
     while true; do
         clear
