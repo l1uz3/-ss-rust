@@ -1,6 +1,6 @@
 # Shadowsocks-Rust 一键管理脚本
 
-支持 Debian / Ubuntu / Alpine 等主流 Linux 系统，支持自定义端口、加密方式（含 2022 系列），自动生成 SIP002 格式节点链接。
+支持 Debian / Ubuntu / Alpine 等主流 Linux 系统，支持自定义端口、加密方式（含 2022 系列），自动生成ss://格式节点链接。
 
 ---
 
