@@ -8,7 +8,7 @@ fi
 
 CONFIG_FILE="/etc/shadowsocks-rust/config.json"
 BIN_FILE="/usr/local/bin/ssserver"
-CLI_FILE="/usr/local/bin/ss"
+CLI_FILE="/usr/local/bin/ssrust"
 
 # 检测系统与服务管理器
 check_sys() {
@@ -180,9 +180,11 @@ EOF
         rc-service ss-server restart
     fi
 
-    # 7. 安装自身为全局命令 /usr/local/bin/ss
+    # 7. 安装自身为全局命令 /usr/local/bin/ssrust
     cp "$0" "$CLI_FILE" 2>/dev/null || curl -sL https://raw.githubusercontent.com/l1uz3/-ss-rust/main/install.sh -o "$CLI_FILE"
     chmod +x "$CLI_FILE"
+    # 清理掉之前可能存在的错误 ss 命令冲突文件
+    rm -f /usr/local/bin/ss
 
     echo ""
     echo "Shadowsocks-Rust 安装完成并已成功启动！"
@@ -219,7 +221,7 @@ view_node() {
     echo "节点链接 (SIP002):"
     echo "$SS_LINK"
     echo "========================================="
-    echo "提示: 以后随时在终端输入 ss 即可打开管理面板"
+    echo "提示: 以后随时在终端输入 ssrust 即可打开管理面板"
     echo ""
 }
 
@@ -289,8 +291,9 @@ uninstall_ss() {
             rm -f "$BIN_FILE"
             rm -rf /etc/shadowsocks-rust
             rm -f "$CLI_FILE"
+            rm -f /usr/local/bin/ss
 
-            echo "卸载完成！所有相关文件及 ss 管理命令已移除。"
+            echo "卸载完成！所有相关文件及管理命令已移除。"
             exit 0
             ;;
         *)
