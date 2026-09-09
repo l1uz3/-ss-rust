@@ -8,10 +8,9 @@ fi
 
 CONFIG_FILE="/etc/shadowsocks-rust/config.json"
 BIN_FILE="/usr/local/bin/ssserver"
-CLI_FILE="/usr/local/bin/ssrust"
 
-# 清理旧冲突并刷新命令缓存
-rm -f /usr/local/bin/ss
+# 清理旧残留别名，避免误影响系统原生 ss
+rm -f /usr/local/bin/ss /usr/local/bin/ssrust
 hash -r 2>/dev/null || true
 
 check_sys() {
@@ -114,7 +113,7 @@ install_ss() {
     DOWNLOAD_URL="https://github.com/shadowsocks/shadowsocks-rust/releases/download/${LATEST_TAG}/shadowsocks-${LATEST_TAG}.${TARGET_ARCH}.tar.xz"
     echo "正在下载: $DOWNLOAD_URL"
 
-    # 清理旧残留进程，防止端口冲突
+    # 清理残留进程，防止端口冲突
     killall -9 ssserver 2>/dev/null || pkill -9 -f ssserver 2>/dev/null || true
 
     TMP_DIR=$(mktemp -d)
@@ -135,7 +134,7 @@ install_ss() {
 }
 EOF
 
-    # 6. 配置守护服务
+    # 6. 配置守护服务 (服务名为 ss-server)
     if [ "$INIT_SYSTEM" = "systemd" ]; then
         cat > /etc/systemd/system/ss-server.service <<EOF
 [Unit]
@@ -176,10 +175,6 @@ EOF
         rc-service ss-server restart
     fi
 
-    # 7. 确保把面板自身下载/复制到 /usr/local/bin/ssrust
-    curl -fsSL https://raw.githubusercontent.com/l1uz3/-ss-rust/main/install.sh -o "$CLI_FILE" 2>/dev/null || cp "$0" "$CLI_FILE" 2>/dev/null || true
-    chmod +x "$CLI_FILE"
-
     echo ""
     echo "Shadowsocks-Rust 安装完成并已成功启动！"
     view_node
@@ -214,7 +209,6 @@ view_node() {
     echo "节点链接 (SIP002):"
     echo "$SS_LINK"
     echo "========================================="
-    echo "提示: 终端随时输入 ssrust 即可打开管理面板"
     echo ""
 }
 
@@ -253,7 +247,7 @@ stop_service() {
 
 view_log() {
     check_sys
-    echo "按 Ctrl + C 退出日志查看"
+    echo "按 Ctrl + C 退出实时日志查看"
     if [ "$INIT_SYSTEM" = "systemd" ]; then
         journalctl -u ss-server -f
     else
@@ -281,11 +275,10 @@ uninstall_ss() {
             killall -9 ssserver 2>/dev/null || pkill -9 -f ssserver 2>/dev/null || true
             rm -f "$BIN_FILE"
             rm -rf /etc/shadowsocks-rust
-            rm -f "$CLI_FILE"
-            rm -f /usr/local/bin/ss
+            rm -f /usr/local/bin/ss /usr/local/bin/ssrust
             hash -r 2>/dev/null || true
 
-            echo "卸载完成！所有相关文件及管理命令已清理。"
+            echo "卸载完成！所有相关文件已清理。"
             exit 0
             ;;
         *)
@@ -294,7 +287,7 @@ uninstall_ss() {
     esac
 }
 
-# 交互主菜单（循环停留，按回车返回）
+# 交互主菜单（循环停留，操作完按回车返回，按 0 退出）
 menu() {
     while true; do
         clear
@@ -342,7 +335,7 @@ menu() {
                 view_log
                 ;;
             0)
-                echo "退出面板。"
+                echo "已退出管理面板。"
                 exit 0
                 ;;
             *)
