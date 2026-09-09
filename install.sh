@@ -18,11 +18,11 @@ fi
 case "$OS" in
     ubuntu|debian)
         INIT_SYSTEM="systemd"
-        apt-get update -y && apt-get install -y curl tar jq openssl qrencode
+        apt-get update -y && apt-get install -y curl tar jq openssl
         ;;
     alpine)
         INIT_SYSTEM="openrc"
-        apk update && apk add curl tar jq openssl libgcc qrencode
+        apk update && apk add curl tar jq openssl libgcc
         ;;
     *)
         echo "不支持的系统: $OS (仅支持 Debian, Ubuntu, Alpine)"
@@ -85,13 +85,13 @@ case "$METHOD_CHOICE" in
         ;;
 esac
 
-# 密码生成 / 输入
+# 修复核心：生成精确字节数的 Base64 密码
 if [ "$KEY_LEN" -gt 0 ]; then
-    AUTO_KEY=$(openssl rand -base64 "$KEY_LEN")
-    read -rp "请输入密码 (Base64格式 $KEY_LEN 字节) [直接回车自动生成]: " PASSWORD
+    AUTO_KEY=$(openssl rand "$KEY_LEN" | base64 | tr -d '\n')
+    read -rp "请输入密码 (Base64编码，对应 $KEY_LEN 字节) [直接回车自动生成]: " PASSWORD
     PASSWORD=${PASSWORD:-$AUTO_KEY}
 else
-    AUTO_PASS=$(openssl rand -base64 16)
+    AUTO_PASS=$(openssl rand -base64 16 | tr -d '\n')
     read -rp "请输入密码 [直接回车自动生成: $AUTO_PASS]: " PASSWORD
     PASSWORD=${PASSWORD:-$AUTO_PASS}
 fi
@@ -127,7 +127,7 @@ cat > "$CONFIG_FILE" <<EOF
 }
 EOF
 
-# 守护进程与服务管理 (服务名改为 ss)
+# 守护进程与服务管理
 if [ "$INIT_SYSTEM" = "systemd" ]; then
     cat > /etc/systemd/system/ss.service <<EOF
 [Unit]
@@ -168,12 +168,12 @@ EOF
     rc-service ss restart
 fi
 
-# 创建极简管理脚本 /usr/local/bin/ss
+# 创建全局快捷管理命令 /usr/local/bin/ss
 cat > /usr/local/bin/ss <<'EOF'
 #!/bin/sh
 ACTION=$1
 INIT="systemd"
-[ ! -f /run/systemd/system ] && INIT="openrc"
+[ ! -d /run/systemd/system ] && INIT="openrc"
 
 case "$ACTION" in
     start)
@@ -186,13 +186,13 @@ case "$ACTION" in
         [ "$INIT" = "systemd" ] && systemctl restart ss || rc-service ss restart
         ;;
     status)
-        [ "$INIT" = "systemd" ] && systemctl status ss || rc-service ss status
+        [ "$INIT" = "systemd" ] && systemctl status ss --no-pager || rc-service ss status
         ;;
     log)
         [ "$INIT" = "systemd" ] && journalctl -u ss -f || tail -f /var/log/messages
         ;;
     config)
-        vi /etc/shadowsocks-rust/config.json
+        ${EDITOR:-vi} /etc/shadowsocks-rust/config.json
         ;;
     *)
         echo "使用方法: ss {start|stop|restart|status|log|config}"
@@ -204,7 +204,7 @@ chmod +x /usr/local/bin/ss
 # 获取公网 IP
 SERVER_IP=$(curl -s4m 5 https://api.ipify.org || curl -s4m 5 https://icanhazip.com || echo "YOUR_SERVER_IP")
 
-# 生成 ss:// 链接 (SIP002 格式)
+# 生成 SIP002 标准节点链接
 RAW_USERINFO="${METHOD}:${PASSWORD}"
 BASE64_USERINFO=$(echo -n "$RAW_USERINFO" | base64 | tr -d '\n' | tr '/+' '_-' | tr -d '=')
 SS_LINK="ss://${BASE64_USERINFO}@${SERVER_IP}:${PORT}#SS-Rust"
@@ -225,7 +225,7 @@ echo "  ss restart  - 重启服务"
 echo "  ss start    - 启动服务"
 echo "  ss stop     - 停止服务"
 echo "  ss log      - 实时日志"
-echo "  ss config   - 修改配置文件"
+echo "  ss config   - 编辑配置文件"
 echo "-----------------------------------------"
 echo "节点链接 (SIP002):"
 echo "$SS_LINK"
