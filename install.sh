@@ -10,7 +10,10 @@ CONFIG_FILE="/etc/shadowsocks-rust/config.json"
 BIN_FILE="/usr/local/bin/ssserver"
 CLI_FILE="/usr/local/bin/ssrust"
 
-# 检测系统与服务管理器
+# 清理旧冲突并刷新命令缓存
+rm -f /usr/local/bin/ss
+hash -r 2>/dev/null || true
+
 check_sys() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
@@ -41,7 +44,6 @@ check_sys() {
     esac
 }
 
-# 安装依赖
 install_dependencies() {
     echo "正在安装基础依赖..."
     if [ "$INIT_SYSTEM" = "systemd" ]; then
@@ -51,7 +53,6 @@ install_dependencies() {
     fi
 }
 
-# 安装 SS-Rust
 install_ss() {
     check_sys
     install_dependencies
@@ -61,7 +62,7 @@ install_ss() {
     echo "         开始安装 Shadowsocks-Rust       "
     echo "========================================="
 
-    # 1. 配置端口
+    # 1. 端口配置
     DEFAULT_PORT=$((RANDOM % 55535 + 10000))
     read -rp "请输入监听端口 [默认: $DEFAULT_PORT]: " PORT
     PORT=${PORT:-$DEFAULT_PORT}
@@ -79,47 +80,42 @@ install_ss() {
     case "$METHOD_CHOICE" in
         2)
             METHOD="2022-blake3-aes-256-gcm"
-            KEY_LEN=32
+            AUTO_KEY=$(openssl rand -base64 32)
             ;;
         3)
             METHOD="2022-blake3-chacha20-poly1305"
-            KEY_LEN=32
+            AUTO_KEY=$(openssl rand -base64 32)
             ;;
         4)
             METHOD="aes-256-gcm"
-            KEY_LEN=0
+            AUTO_KEY=$(openssl rand -base64 16)
             ;;
         5)
             METHOD="chacha20-ietf-poly1305"
-            KEY_LEN=0
+            AUTO_KEY=$(openssl rand -base64 16)
             ;;
         *)
             METHOD="2022-blake3-aes-128-gcm"
-            KEY_LEN=16
+            AUTO_KEY=$(openssl rand -base64 16)
             ;;
     esac
 
-    # 3. 生成合规密钥（彻底解决 status 70 报错）
-    if [ "$KEY_LEN" -gt 0 ]; then
-        AUTO_KEY=$(openssl rand "$KEY_LEN" | base64 | tr -d '\n')
-        read -rp "请输入密码 (Base64编码，需为 $KEY_LEN 字节) [回车自动生成]: " PASSWORD
-        PASSWORD=${PASSWORD:-$AUTO_KEY}
-    else
-        AUTO_PASS=$(openssl rand -base64 16 | tr -d '\n')
-        read -rp "请输入密码 [回车自动生成: $AUTO_PASS]: " PASSWORD
-        PASSWORD=${PASSWORD:-$AUTO_PASS}
-    fi
+    # 3. 输入或自动生成密码
+    read -rp "请输入密码 [直接回车自动生成合规密钥]: " PASSWORD
+    PASSWORD=${PASSWORD:-$AUTO_KEY}
 
-    # 4. 获取最新 Release 并下载
-    echo "正在查询 shadowsocks-rust 最新发布版本..."
+    # 4. 下载对应架构二进制
+    echo "正在查询 shadowsocks-rust 最新版本..."
     LATEST_TAG=$(curl -s https://api.github.com/repos/shadowsocks/shadowsocks-rust/releases/latest | jq -r '.tag_name')
     if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
-        echo "获取最新版本失败，使用稳定回退版本 v1.21.2"
         LATEST_TAG="v1.21.2"
     fi
 
     DOWNLOAD_URL="https://github.com/shadowsocks/shadowsocks-rust/releases/download/${LATEST_TAG}/shadowsocks-${LATEST_TAG}.${TARGET_ARCH}.tar.xz"
-    echo "下载地址: $DOWNLOAD_URL"
+    echo "正在下载: $DOWNLOAD_URL"
+
+    # 清理旧残留进程，防止端口冲突
+    killall -9 ssserver 2>/dev/null || pkill -9 -f ssserver 2>/dev/null || true
 
     TMP_DIR=$(mktemp -d)
     curl -sL "$DOWNLOAD_URL" | tar -xJ -C "$TMP_DIR"
@@ -180,18 +176,15 @@ EOF
         rc-service ss-server restart
     fi
 
-    # 7. 安装自身为全局命令 /usr/local/bin/ssrust
-    cp "$0" "$CLI_FILE" 2>/dev/null || curl -sL https://raw.githubusercontent.com/l1uz3/-ss-rust/main/install.sh -o "$CLI_FILE"
+    # 7. 确保把面板自身下载/复制到 /usr/local/bin/ssrust
+    curl -fsSL https://raw.githubusercontent.com/l1uz3/-ss-rust/main/install.sh -o "$CLI_FILE" 2>/dev/null || cp "$0" "$CLI_FILE" 2>/dev/null || true
     chmod +x "$CLI_FILE"
-    # 清理掉之前可能存在的错误 ss 命令冲突文件
-    rm -f /usr/local/bin/ss
 
     echo ""
     echo "Shadowsocks-Rust 安装完成并已成功启动！"
     view_node
 }
 
-# 查看节点信息
 view_node() {
     if [ ! -f "$CONFIG_FILE" ]; then
         echo "错误: 未检测到配置文件，服务可能未安装！"
@@ -221,11 +214,10 @@ view_node() {
     echo "节点链接 (SIP002):"
     echo "$SS_LINK"
     echo "========================================="
-    echo "提示: 以后随时在终端输入 ssrust 即可打开管理面板"
+    echo "提示: 终端随时输入 ssrust 即可打开管理面板"
     echo ""
 }
 
-# 查看运行状态
 view_status() {
     check_sys
     echo "---------------- 服务状态 ----------------"
@@ -237,9 +229,9 @@ view_status() {
     echo "------------------------------------------"
 }
 
-# 重启服务
 restart_service() {
     check_sys
+    killall -9 ssserver 2>/dev/null || pkill -9 -f ssserver 2>/dev/null || true
     if [ "$INIT_SYSTEM" = "systemd" ]; then
         systemctl restart ss-server
     else
@@ -248,7 +240,6 @@ restart_service() {
     echo "服务已重启！"
 }
 
-# 停止服务
 stop_service() {
     check_sys
     if [ "$INIT_SYSTEM" = "systemd" ]; then
@@ -256,10 +247,10 @@ stop_service() {
     else
         rc-service ss-server stop
     fi
+    killall -9 ssserver 2>/dev/null || pkill -9 -f ssserver 2>/dev/null || true
     echo "服务已停止！"
 }
 
-# 查看日志
 view_log() {
     check_sys
     echo "按 Ctrl + C 退出日志查看"
@@ -270,7 +261,6 @@ view_log() {
     fi
 }
 
-# 卸载 SS-Rust
 uninstall_ss() {
     read -rp "确定要彻底卸载 Shadowsocks-Rust 吗？[y/N]: " CONFIRM
     case "$CONFIRM" in
@@ -288,12 +278,14 @@ uninstall_ss() {
                 rm -f /etc/init.d/ss-server
             fi
 
+            killall -9 ssserver 2>/dev/null || pkill -9 -f ssserver 2>/dev/null || true
             rm -f "$BIN_FILE"
             rm -rf /etc/shadowsocks-rust
             rm -f "$CLI_FILE"
             rm -f /usr/local/bin/ss
+            hash -r 2>/dev/null || true
 
-            echo "卸载完成！所有相关文件及管理命令已移除。"
+            echo "卸载完成！所有相关文件及管理命令已清理。"
             exit 0
             ;;
         *)
@@ -302,36 +294,64 @@ uninstall_ss() {
     esac
 }
 
-# 交互主菜单
+# 交互主菜单（循环停留，按回车返回）
 menu() {
-    clear
-    echo "========================================="
-    echo "       Shadowsocks-Rust 管理面板         "
-    echo "========================================="
-    echo " 1. 安装 / 重新安装 节点"
-    echo " 2. 查看 节点配置与链接"
-    echo " 3. 卸载 Shadowsocks-Rust"
-    echo "-----------------------------------------"
-    echo " 4. 查看 运行状态"
-    echo " 5. 重启 服务"
-    echo " 6. 停止 服务"
-    echo " 7. 查看 实时日志"
-    echo " 0. 退出"
-    echo "========================================="
-    read -rp "请输入选项 [0-7]: " num
+    while true; do
+        clear
+        echo "========================================="
+        echo "       Shadowsocks-Rust 管理面板         "
+        echo "========================================="
+        echo " 1. 安装 / 重新安装 节点"
+        echo " 2. 查看 节点配置与链接"
+        echo " 3. 卸载 Shadowsocks-Rust"
+        echo "-----------------------------------------"
+        echo " 4. 查看 运行状态"
+        echo " 5. 重启 服务"
+        echo " 6. 停止 服务"
+        echo " 7. 查看 实时日志"
+        echo " 0. 退出面板"
+        echo "========================================="
+        read -rp "请输入选项 [0-7]: " num
 
-    case "$num" in
-        1) install_ss ;;
-        2) view_node ;;
-        3) uninstall_ss ;;
-        4) view_status ;;
-        5) restart_service ;;
-        6) stop_service ;;
-        7) view_log ;;
-        0) exit 0 ;;
-        *) echo "无效选项，请输入 0-7" ;;
-    esac
+        case "$num" in
+            1)
+                install_ss
+                read -rp "按回车键返回菜单..." _
+                ;;
+            2)
+                view_node
+                read -rp "按回车键返回菜单..." _
+                ;;
+            3)
+                uninstall_ss
+                read -rp "按回车键返回菜单..." _
+                ;;
+            4)
+                view_status
+                read -rp "按回车键返回菜单..." _
+                ;;
+            5)
+                restart_service
+                read -rp "按回车键返回菜单..." _
+                ;;
+            6)
+                stop_service
+                read -rp "按回车键返回菜单..." _
+                ;;
+            7)
+                view_log
+                ;;
+            0)
+                echo "退出面板。"
+                exit 0
+                ;;
+            *)
+                echo "无效选项，请输入 0-7"
+                sleep 1
+                ;;
+        esac
+    done
 }
 
-# 脚本入口
+# 入口
 menu
